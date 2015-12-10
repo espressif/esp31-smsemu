@@ -13,22 +13,15 @@ uint8 internal_buffer[0x100];
 /* Precalculated pixel table */
 uint16 pixel[PALETTE_SIZE];
 
-//Each tile takes up 8*8=64 bytes. We have 512 tiles * 4 attribs, so 2K tiles max.
-#define CACHEDTILES 512
+/* Pattern cache */
+uint8 cache[0x20000];
 
-
-int16 cachePtr[512*4];				//(tile+attr<<9) -> cache tile store index (i<<6); -1 if not cached
-uint8 cacheStore[CACHEDTILES*64];	//Tile store
-uint8 cacheStoreUsed[CACHEDTILES];	//Marks if a tile is used
-
+/* Dirty pattern info */
+uint8 vram_dirty[0x200];
 uint8 is_vram_dirty;
 
-int cacheKillPtr=0;
-int freePtr=0;
-
 /* Pixel look-up table */
-//uint8 lut[0x10000];
-#include "lut.h"
+uint8 lut[0x10000];
 
 /* Attribute expansion table */
 uint32 atex[4] =
@@ -44,74 +37,6 @@ int vp_vstart;
 int vp_vend;
 int vp_hstart;
 int vp_hend;
-
-
-void vramMarkTileDirty(int index) {
-	int i=index;
-	while (i<0x800) {
-		if (cachePtr[i]!=-1) {
-			freePtr=cachePtr[i]>>6;
-//			printf("Freeing cache loc %d for tile %d\n", freePtr, index);
-			cacheStoreUsed[freePtr]=0;
-			cachePtr[i]=-1;
-		}
-		i+=0x200;
-	}
-}
-
-uint8 *getCache(int tile, int attr) {
-    int n, i, x, y, c;
-    int b0, b1, b2, b3;
-    int i0, i1, i2, i3;
-	int p;
-	//See if we have this in cache.
-	if (cachePtr[tile+(attr<<9)]!=-1) return &cacheStore[cachePtr[tile+(attr<<9)]];
-
-	//Nope! Generate cache tile.
-	//Find free cache idx first.
-	do {
-		i=freePtr;
-		n=0;
-		while (cacheStoreUsed[i] && n<CACHEDTILES) {
-			i++;
-			n++;
-			if (i==CACHEDTILES) i=0;
-		}
-
-		if (n==CACHEDTILES) {
-			printf("Eek, tile cache overflow\n");
-			//Crap, out of cache. Kill a tile.
-			vramMarkTileDirty(cacheKillPtr++);
-			if (cacheKillPtr>=512) cacheKillPtr=0;
-			i=freePtr;
-		}
-	} while (cacheStoreUsed[i]);
-	//Okay, somehow we have a free cache tile in i now.
-	cacheStoreUsed[i]=1;
-	cachePtr[tile+(attr<<9)]=i<<6;
-
-//	printf("Generating cache loc %d for tile %d attr %d\n", i, tile, attr);
-	//Calculate tile
-	for(y = 0; y < 8; y += 1) {
-		b0 = vdp.vram[(tile << 5) | (y << 2) | (0)];
-		b1 = vdp.vram[(tile << 5) | (y << 2) | (1)];
-		b2 = vdp.vram[(tile << 5) | (y << 2) | (2)];
-		b3 = vdp.vram[(tile << 5) | (y << 2) | (3)];
-		for(x = 0; x < 8; x += 1) {
-			i0 = (b0 >> (x ^ 7)) & 1;
-			i1 = (b1 >> (x ^ 7)) & 1;
-			i2 = (b2 >> (x ^ 7)) & 1;
-			i3 = (b3 >> (x ^ 7)) & 1;
-
-			c = (i3 << 3 | i2 << 2 | i1 << 1 | i0);
-			if (attr==0) cacheStore[(i<<6)|(y<<3)|(x)]=c;
-			if (attr==1) cacheStore[(i<<6)|((y^7)<<3)|(x^7)]=c;
-			if (attr==2) cacheStore[(i<<6)|(y<<3)|(x)]=c;
-			if (attr==3) cacheStore[(i<<6)|((y^7)<<3)|(x^7)]=c;
-		}
-	}
-	return &cacheStore[i<<6];
-}
 
 
 /* Macros to access memory 32-bits at a time (from MAME's drawgfx.c) */
@@ -171,7 +96,6 @@ static __inline__ void write_dword(void *address, uint32 data)
 /* Initialize the rendering data */
 void render_init(void)
 {
-#if 0
     int bx, sx, b, s, bp, bf, sf, c;
 
     /* Generate 64k of data for the look up table */
@@ -211,7 +135,6 @@ void render_init(void)
         }
     }
 
-#endif
     render_reset();
 }
 
@@ -231,8 +154,9 @@ void render_reset(void)
     }
 
     /* Invalidate pattern cache */
-	for (i=0; i<512*4; i++) cachePtr[i]=-1;
-	for (i=0; i<512; i++) vramMarkTileDirty(i);
+    is_vram_dirty = 1;
+    memset(vram_dirty, 1, 0x200);
+    memset(cache, 0, sizeof(cache));
 
     /* Set up viewport size */
     if(IS_GG)
@@ -264,6 +188,8 @@ void render_line(int line)
     /* Point to current line in output buffer */
     linebuf = (bitmap.depth == 8) ? &bitmap.data[(line * bitmap.pitch)] : &internal_buffer[0];
 
+    /* Update pattern cache */
+    update_cache();
 
     /* Blank line */
     if( (!(vdp.reg[1] & 0x40)) || (((vdp.reg[2] & 1) == 0) && (IS_SMS)))
@@ -304,7 +230,6 @@ void render_bg_sms(int line)
     uint32 atex_mask;
     uint32 *cache_ptr;
     uint32 *linebuf_ptr = (uint32 *)&linebuf[0 - shift];
-	uint8 *ctp;
 
     /* Draw first column (clipped) */
     if(shift)
@@ -320,8 +245,7 @@ void render_bg_sms(int line)
 
         for(x = shift; x < 8; x += 1)
         {
-			ctp=getCache((attr&0x1ff), (attr>>9)&3);
-            c = ctp[(v_row) | (x)];
+            c = cache[((attr & 0x7FF) << 6) | (v_row) | (x)];
             linebuf[(0 - shift) + (x)  ] = ((c) | (a));
         }
 
@@ -349,8 +273,7 @@ void render_bg_sms(int line)
         atex_mask = atex[(attr >> 11) & 3];
 
         /* Point to a line of pattern data in cache */
-		ctp=getCache((attr&0x1ff), (attr>>9)&3);
-        cache_ptr = (uint32 *)&ctp[(v_row)];
+        cache_ptr = (uint32 *)&cache[((attr & 0x7FF) << 6) | (v_row)];
         
         /* Copy the left half, adding the attribute bits in */
         write_dword( &linebuf_ptr[(column << 1)] , read_dword( &cache_ptr[0] ) | (atex_mask));
@@ -375,8 +298,7 @@ void render_bg_sms(int line)
 
         for(x = 0; x < shift; x += 1)
         {
-			ctp=getCache((attr&0x1ff), (attr>>9)&3);
-            c = ctp[(v_row) | (x)];
+            c = cache[((attr & 0x7FF) << 6) | (v_row) | (x)];
             p[x] = ((c) | (a));
         }
     }
@@ -396,7 +318,6 @@ void render_bg_gg(int line)
     uint32 atex_mask;
     uint32 *cache_ptr;
     uint32 *linebuf_ptr = (uint32 *)&linebuf[0 - (hscroll & 7)];
-	uint8_t *ctp;
 
     /* Draw a line of the background */
     for(column = vp_hstart; column <= vp_hend; column += 1)
@@ -411,8 +332,7 @@ void render_bg_gg(int line)
         atex_mask = atex[(attr >> 11) & 3];
 
         /* Point to a line of pattern data in cache */
-		ctp=getCache((attr&0x1ff), (attr>>9)&3);
-        cache_ptr = (uint32 *)&ctp[(v_row)];
+        cache_ptr = (uint32 *)&cache[((attr & 0x7FF) << 6) | (v_row)];
 
         /* Copy the left half, adding the attribute bits in */
         write_dword( &linebuf_ptr[(column << 1)] , read_dword( &cache_ptr[0] ) | (atex_mask));
@@ -427,7 +347,6 @@ void render_bg_gg(int line)
 void render_obj(int line)
 {
     int i;
-	uint8_t *ctp;
 
     /* Sprite count for current line (8 max.) */
     int count = 0;
@@ -510,8 +429,7 @@ void render_obj(int line)
             if(vdp.reg[1] & 0x01)
             {
                 int x;
-				ctp=getCache((n&0x1ff)+((line - yp) >> 3), (n>>9)&3);
-                uint8 *cache_ptr = (uint8 *)&ctp[(((line - yp) >> 1) << 3)];
+                uint8 *cache_ptr = (uint8 *)&cache[(n << 6) | (((line - yp) >> 1) << 3)];
 
                 /* Draw sprite line */
                 for(x = start; x < end; x += 1)
@@ -536,8 +454,7 @@ void render_obj(int line)
             else /* Regular size sprite (8x8 / 8x16) */
             {
                 int x;
-				ctp=getCache((n&0x1ff)+((line - yp) >> 3), (n>>9)&3);
-                uint8 *cache_ptr = (uint8 *)&ctp[((line - yp) << 3)&0x38];
+                uint8 *cache_ptr = (uint8 *)&cache[(n << 6) | ((line - yp) << 3)];
 
                 /* Draw sprite line */
                 for(x = start; x < end; x += 1)
@@ -567,7 +484,6 @@ void render_obj(int line)
 /* Update pattern cache with modified tiles */
 void update_cache(void)
 {
-/*
     int i, x, y, c;
     int b0, b1, b2, b3;
     int i0, i1, i2, i3;
@@ -605,7 +521,6 @@ void update_cache(void)
             }
         }
     }
-*/
 }
 
 
