@@ -15,7 +15,7 @@ uint16 pixel[PALETTE_SIZE];
 
 //Each tile takes up 8*8=64 bytes. We have 512 tiles * 4 attribs, so 2K tiles max.
 #define CACHEDTILES 512
-
+#define ALIGN_DWORD 1 //esp doesn't support unaligned word writes
 
 int16 cachePtr[512*4];				//(tile+attr<<9) -> cache tile store index (i<<6); -1 if not cached
 uint8 cacheStore[CACHEDTILES*64];	//Tile store
