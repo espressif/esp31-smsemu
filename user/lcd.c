@@ -39,12 +39,14 @@
 
 void lcdSpiWrite(int data) {
 	int bit;
+	GPIO_REG_WRITE(GPIO_OUT_W1TC, (1<<SPI_CS));
 	for (bit=0x100; bit!=0; bit>>=1) {
 		if (data&bit) {
 			GPIO_REG_WRITE(GPIO_OUT_W1TS, (1<<SPI_DAT));
 		} else {
 			GPIO_REG_WRITE(GPIO_OUT_W1TC, (1<<SPI_DAT));
 		}
+		GPIO_REG_WRITE(GPIO_OUT_W1TC, (1<<SPI_CLK));
 		GPIO_REG_WRITE(GPIO_OUT_W1TS, (1<<SPI_CLK));
 	}
 }
@@ -69,17 +71,15 @@ void lcdInit() {
 	gpio_config(&gpioconf);
 	
 	lcdRaiseCs();
+	vTaskDelay(10);
 
 	GPIO_REG_WRITE(GPIO_OUT_W1TC, (1<<SPI_RST));
 	vTaskDelay(150);
 	GPIO_REG_WRITE(GPIO_OUT_W1TS, (1<<SPI_RST));
+	vTaskDelay(10);
 
-
-	lcdLowerCs();
 	SPI_WriteCMD(0x11); //Sleep Out
-	lcdRaiseCs();
 	vTaskDelay(120);
-	lcdLowerCs();
 	//SPI_WriteCMD(0x36);
 	//SPI_WriteDAT(0x40);
 	SPI_WriteCMD(0xB4);
@@ -144,16 +144,30 @@ void lcdInit() {
 	SPI_WriteDAT(0x01);
 	SPI_WriteDAT(0x9B);
 	SPI_WriteDAT(0x00);
+
+#if 0
+SPI_WriteCMD(0xC6);//set rgb interface
+SPI_WriteDAT(0x83);//
+SPI_WriteCMD(0x29); //Display On
+	vTaskDelay(50);
+ 
+/////////////////////////////////////////////////////
+SPI_WriteCMD(0x36);
+SPI_WriteDAT(0x48);//
+SPI_WriteCMD(0x3A);//
+SPI_WriteDAT(0x55);//
+#else
 	SPI_WriteCMD(0xC6);//set rgb interface (this one is undocumented?)
 	SPI_WriteDAT(0x83);//
-	SPI_WriteCMD(0x69); //Display On
+	SPI_WriteCMD(0x29);//Display On - Do Not Set 
 	vTaskDelay(50);
 	 
 	/////////////////////////////////////////////////////
 	SPI_WriteCMD(0x36);
-	SPI_WriteDAT(0x68);//was 28
+	SPI_WriteDAT(0x68);//
 	SPI_WriteCMD(0x3A);//
 	SPI_WriteDAT(0x55);//
+#endif
 
 	lcdRaiseCs();
 	printf("Init done.\n");
