@@ -75,9 +75,6 @@ void sms_frame(int skip_render)
 
 void sms_init(void)
 {
-#if PSX
-    z80_set_context((void *)0x1F800000);
-#endif
     cpu_reset();
     sms_reset();
 }
@@ -88,7 +85,7 @@ void sms_reset(void)
     /* Clear SMS context */
     memset(sms.dummy, 0, 0x2000);
     memset(sms.ram, 0, 0x2000);
-    memset(sms.sram, 0, 0x8000);
+    //memset(sms.sram, 0, 0x8000);
     sms.paused = sms.save = sms.port_3F = sms.port_F2 = sms.irq = 0x00;
     sms.psg_mask = 0xFF;
 

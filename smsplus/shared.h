@@ -28,4 +28,6 @@
 #include "sn76496.h"
 #include "system.h"
 
+char unalChar(const char *adr);
+
 #endif /* _SHARED_H_ */

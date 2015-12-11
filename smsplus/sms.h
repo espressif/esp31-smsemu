@@ -8,9 +8,10 @@
 /* SMS context */
 typedef struct
 {
-    uint8 dummy[0x2000]; //JMD: We can probably make this point at a no-op mem address and gain 8K of mem
+    uint8 *dummy; //JMD: Point this into outher space plz.
     uint8 ram[0x2000];
-    uint8 sram[0x8000];
+//    uint8 sram[0x8000];
+    uint8 *sram;
     uint8 fcr[4];
     uint8 paused;
     uint8 save;

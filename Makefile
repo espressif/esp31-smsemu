@@ -23,6 +23,7 @@ GEN_BINS= eagle.app.v7.bin
 SPECIAL_MKTARGETS=$(APP_MKTARGETS)
 SUBDIRS=    \
     user	\
+	driver	\
 	smsplus
 
 endif # } PDIR
@@ -30,6 +31,7 @@ endif # } PDIR
 LDDIR = $(SDK_PATH)/ld
 
 CCFLAGS += -Os
+LDFLAGS += -Wl,--Map=map.txt
 
 TARGET_LDFLAGS =    \
     -nostdlib       \
@@ -47,7 +49,8 @@ endif
 
 COMPONENTS_eagle.app.v7 =   \
     user/libuser.a			\
-	smsplus/libsmsplus.a
+	smsplus/libsmsplus.a	\
+	driver/libdriver.a
 
 LINKFLAGS_eagle.app.v7 =    \
     -L$(SDK_PATH)/lib       \

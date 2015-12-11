@@ -64,9 +64,13 @@ extern void cpu_writeport(int port, int data);
 extern int cpu_readport(int port);
 unsigned char *cpu_readmap[8];
 unsigned char *cpu_writemap[8];
-#define cpu_readmem16(a)        cpu_readmap[(a) >> 13][(a) & 0x1FFF]
-#define cpu_readop(a)           cpu_readmap[(a) >> 13][(a) & 0x1FFF]
-#define cpu_readop_arg(a)       cpu_readmap[(a) >> 13][(a) & 0x1FFF]
+
+
+
+
+#define cpu_readmem16(a)        unalChar(&cpu_readmap[(a) >> 13][(a) & 0x1FFF])
+#define cpu_readop(a)           unalChar(&cpu_readmap[(a) >> 13][(a) & 0x1FFF])
+#define cpu_readop_arg(a)       unalChar(&cpu_readmap[(a) >> 13][(a) & 0x1FFF])
 
 /* execute main opcodes inside a big switch statement */
 #ifndef BIG_SWITCH
@@ -74,10 +78,10 @@ unsigned char *cpu_writemap[8];
 #endif
 
 /* big flags array for ADD/ADC/SUB/SBC/CP results */
-#define BIG_FLAGS_ARRAY         1
+#define BIG_FLAGS_ARRAY         0
 
 /* Set to 1 for a more exact (but somewhat slower) Z80 emulation */
-#define Z80_EXACT               1
+#define Z80_EXACT               0
 
 /* repetitive commands (ldir,cpdr etc.) repeat at
    once until cycles used up or B(C) counted down. */
@@ -178,17 +182,17 @@ static UINT8 *SZHVC_sub = 0;
 
 #if Z80_EXACT
 /* tmp1 value for ini/inir/outi/otir for [C.1-0][io.1-0] */
-static UINT8 irep_tmp1[4][4] = {
+const static UINT8 irep_tmp1[4][4] = {
 	{0,0,1,0},{0,1,0,1},{1,0,1,1},{0,1,1,0}
 };
 
 /* tmp1 value for ind/indr/outd/otdr for [C.1-0][io.1-0] */
-static UINT8 drep_tmp1[4][4] = {
+const static UINT8 drep_tmp1[4][4] = {
 	{0,1,0,0},{1,0,0,1},{0,0,1,0},{0,1,0,1}
 };
 
 /* tmp2 value for all in/out repeated opcodes for B.7-0 */
-static UINT8 breg_tmp2[256] = {
+const static UINT8 breg_tmp2[256] = {
 	0,0,1,1,0,1,0,0,1,1,0,0,1,0,1,1,
 	0,1,0,0,1,0,1,1,0,0,1,1,0,1,0,0,
 	1,1,0,0,1,0,1,1,0,0,1,1,0,1,0,0,
@@ -208,7 +212,7 @@ static UINT8 breg_tmp2[256] = {
 };
 #endif
 
-static UINT8 cc_op[0x100] = {
+const static UINT8 cc_op[0x100] = {
  4,10, 7, 6, 4, 4, 7, 4, 4,11, 7, 6, 4, 4, 7, 4,
  8,10, 7, 6, 4, 4, 7, 4,12,11, 7, 6, 4, 4, 7, 4,
  7,10,16, 6, 4, 4, 7, 4, 7,11,16, 6, 4, 4, 7, 4,
@@ -227,7 +231,7 @@ static UINT8 cc_op[0x100] = {
  5,10,10, 4,10,11, 7,11, 5, 6,10, 4,10, 0, 7,11};
 
 
-static UINT8 cc_cb[0x100] = {
+const static UINT8 cc_cb[0x100] = {
  8, 8, 8, 8, 8, 8,15, 8, 8, 8, 8, 8, 8, 8,15, 8,
  8, 8, 8, 8, 8, 8,15, 8, 8, 8, 8, 8, 8, 8,15, 8,
  8, 8, 8, 8, 8, 8,15, 8, 8, 8, 8, 8, 8, 8,15, 8,
@@ -245,7 +249,7 @@ static UINT8 cc_cb[0x100] = {
  8, 8, 8, 8, 8, 8,15, 8, 8, 8, 8, 8, 8, 8,15, 8,
  8, 8, 8, 8, 8, 8,15, 8, 8, 8, 8, 8, 8, 8,15, 8};
 
-static UINT8 cc_dd[0x100] = {
+const static UINT8 cc_dd[0x100] = {
  4, 4, 4, 4, 4, 4, 4, 4, 4,15, 4, 4, 4, 4, 4, 4,
  4, 4, 4, 4, 4, 4, 4, 4, 4,15, 4, 4, 4, 4, 4, 4,
  4,14,20,10, 9, 9, 9, 4, 4,15,20,10, 9, 9, 9, 4,
@@ -266,7 +270,7 @@ static UINT8 cc_dd[0x100] = {
 // dd/fd cycles are identical
 #define cc_fd cc_dd
 
-static UINT8 cc_xxcb[0x100] = {
+const static UINT8 cc_xxcb[0x100] = {
 23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
 23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
 23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
@@ -284,7 +288,7 @@ static UINT8 cc_xxcb[0x100] = {
 23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
 23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23};
 
-static UINT8 cc_ed[0x100] = {
+const static UINT8 cc_ed[0x100] = {
  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,

@@ -31,7 +31,7 @@ int freePtr=0;
 #include "lut.h"
 
 /* Attribute expansion table */
-uint32 atex[4] =
+const uint32 atex[4] =
 {
     0x00000000,
     0x10101010,
@@ -45,6 +45,12 @@ int vp_vend;
 int vp_hstart;
 int vp_hend;
 
+void render_bg_sms(int line);
+void render_bg_gg(int line);
+void render_obj(int line);
+void palette_sync(int index);
+void render_reset(void);
+void render_init(void);
 
 void vramMarkTileDirty(int index) {
 	int i=index;
@@ -285,7 +291,6 @@ void render_line(int line)
         }
     }
 
-    if(bitmap.depth != 8) remap_8_to_16(line);
 }
 
 
@@ -565,48 +570,6 @@ void render_obj(int line)
 
 
 /* Update pattern cache with modified tiles */
-void update_cache(void)
-{
-/*
-    int i, x, y, c;
-    int b0, b1, b2, b3;
-    int i0, i1, i2, i3;
-
-    if(!is_vram_dirty) return;
-    is_vram_dirty = 0;
-
-    for(i = 0; i < 0x200; i += 1)
-    {
-        if(vram_dirty[i])
-        {
-            vram_dirty[i] = 0;
-
-            for(y = 0; y < 8; y += 1)
-            {
-                b0 = vdp.vram[(i << 5) | (y << 2) | (0)];
-                b1 = vdp.vram[(i << 5) | (y << 2) | (1)];
-                b2 = vdp.vram[(i << 5) | (y << 2) | (2)];
-                b3 = vdp.vram[(i << 5) | (y << 2) | (3)];
-
-                for(x = 0; x < 8; x += 1)
-                {
-                    i0 = (b0 >> (x ^ 7)) & 1;
-                    i1 = (b1 >> (x ^ 7)) & 1;
-                    i2 = (b2 >> (x ^ 7)) & 1;
-                    i3 = (b3 >> (x ^ 7)) & 1;
-
-                    c = (i3 << 3 | i2 << 2 | i1 << 1 | i0);
-
-                    cache[0x00000 | (i << 6) | ((y  ) << 3) | (x)] = c;
-                    cache[0x08000 | (i << 6) | ((y  ) << 3) | (x ^ 7)] = c;
-                    cache[0x10000 | (i << 6) | ((y ^ 7) << 3) | (x)] = c;
-                    cache[0x18000 | (i << 6) | ((y ^ 7) << 3) | (x ^ 7)] = c;
-                }
-            }
-        }
-    }
-*/
-}
 
 
 /* Update a palette entry */
@@ -635,23 +598,6 @@ void palette_sync(int index)
 
     bitmap.pal.dirty[index] = bitmap.pal.update = 1;
 }
-
-
-void remap_8_to_16(int line)
-{
-    int i;
-    int length = BMP_WIDTH;
-    int ofs = BMP_X_OFFSET;
-    uint16 *p = (uint16 *)&bitmap.data[(line * bitmap.pitch) + (ofs << 1)];
-
-    for(i = 0; i < length; i += 1)
-    {
-        p[i] = pixel[(internal_buffer[(ofs + i)] & PIXEL_MASK)];
-    }        
-}
-
-
-
 
 
 
