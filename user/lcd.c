@@ -229,12 +229,34 @@ void lcdInit() {
 	printf("Init done.\n");
 }
 
+
+int lcdXpos=0;
+int lcdYpos=0;
+int pal565[32];
+char *bmData;
+
+void lcdPumpPixels() {
+	int col;
+	if (lcdYpos==192) return;
+
+	do {
+		col=pal565[(*bmData++)&31];
+		SPI_WriteDAT((col>>8));
+		SPI_WriteDAT(col);
+		lcdXpos++;
+	} while (lcdXpos&31);
+	lcdSpiSend(0);
+	if (lcdXpos==256) {
+		lcdXpos=0;
+		lcdYpos++;
+	}
+}
+
+
 void lcdWriteSMSFrame() {
 	int index;
 	int col;
 	int x, y;
-	int pal565[32];
-	char *p=bitmap.data;
 
 	//Convert RGB palette to 565 data as required by the LCD beforehand.
 	for (x=0; x<32; x++) {
@@ -255,15 +277,10 @@ void lcdWriteSMSFrame() {
 	SPI_WriteDAT((YSTART+192)>>8);
 	SPI_WriteDAT((YSTART+192)&0xff);
 	SPI_WriteCMD(0x2C); //Memory write
-	for (y=0; y<192; y++) {
-		for (x=0; x<256; x++) {
-			index=(*p++)&31;
-			col=pal565[index];
-			SPI_WriteDAT((col>>8));
-			SPI_WriteDAT(col);
-			if ((x&31)==0) lcdSpiSend(0);
-		}
-	}
-//	lcdSpiSend(0);
+
+	bmData=bitmap.data;
+	lcdXpos=0;
+	lcdYpos=0;
+	while (lcdYpos!=192) lcdPumpPixels();
 }
 
