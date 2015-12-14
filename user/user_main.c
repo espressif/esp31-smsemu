@@ -29,6 +29,9 @@
 #include "freertos/queue.h"
 
 #include "../smsplus/shared.h"
+#include "esp_common.h"
+#include "esp32/esp32.h"
+
 
 char unalChar(const char *adr) {
 	int *p=(int *)((int)adr&0xfffffffc);
@@ -57,7 +60,8 @@ static void smsemu(void *arg) {
 	sms.use_fm=0;
 	sms.country=TYPE_OVERSEAS;
 	sms.dummy=(uint8*)0x3ffa8000; //Redirect dummy accesses to ROM. Write is a no-op and reads don't matter.
-	sms.sram=(uint8*)0x3ffa8000; //Redirect dummy accesses to ROM. Write is a no-op and reads don't matter.
+//	sms.sram=(uint8*)0x3ffa8000; //Redirect dummy accesses to ROM. Write is a no-op and reads don't matter.
+	sms.sram=&videodata[256*192];
 	bitmap.data=videodata;
 	bitmap.width=256;
 	bitmap.height=192;
@@ -76,16 +80,7 @@ static void smsemu(void *arg) {
 	while(1) {
 		frameno++;
 		sms_frame(0);
-		if ((frameno&15)==0) lcdWriteSMSFrame();
-/*
-		for (y=0; y<192; y+=4) {
-			for (x=0; x<256; x+=2) {
-				printf("%c", '0'+unalChar(&videodata[x<<8+y])&63);
-			}
-			printf("\n");
-		}
-		printf("f\n");
-*/
+		if ((frameno&3)==0) lcdWriteSMSFrame();
 	}
 }
 
@@ -97,7 +92,10 @@ static void smsemu(void *arg) {
 *******************************************************************************/
 void user_init(void)
 {
-    printf("SDK version:%s\n", system_get_sdk_version());
+	//Clock CPU at 160MHz
+	SET_PERI_REG_MASK(CPU_PER_CONF_REG, PRODPORT_CPUPERIOD_SEL);
+
+	printf("SDK version:%s\n", system_get_sdk_version());
 //	xTaskCreate(video, "video"  , 2048, NULL, 3, NULL);
 	xTaskCreate(smsemu, "smsemu"  , 2048, NULL, 3, NULL);
 }

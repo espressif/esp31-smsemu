@@ -23,12 +23,17 @@
  */
 
 
+/*
+LCD driver for ILI9341 on TM022 LCD
+*/
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
 #include "esp_common.h"
 #include "gpio.h"
+#include "spi_register.h"
 
 #include "../smsplus/shared.h"
 
@@ -36,140 +41,191 @@
 #define SPI_CS 19
 #define SPI_CLK 20
 #define SPI_DAT 21
+#define SPI_DC 22
+
+
+uint32_t lcdData[16]; //can contain (16*32/9=)56 9-bit data words.
+int lcdDataPos=0;
+
+#define SPIDEV 3
+
+void lcdSpiSend(int isCmd) {
+	int x=0;
+
+	while(READ_PERI_REG(SPI_CMD(SPIDEV)) & SPI_USR);
+	if (isCmd) {
+		GPIO_REG_WRITE(GPIO_OUT_W1TC, (1<<SPI_DC));
+	} else {
+		GPIO_REG_WRITE(GPIO_OUT_W1TS, (1<<SPI_DC));
+	}
+
+	for (x=0; x<16; x++) {
+		WRITE_PERI_REG(SPI_W0(SPIDEV)+(x*4), lcdData[x]);
+		lcdData[x]=0;
+	}
+	WRITE_PERI_REG(SPI_USER1(SPIDEV), (((lcdDataPos*8)-1)<<SPI_USR_MOSI_BITLEN_S));
+	WRITE_PERI_REG(SPI_CMD(SPIDEV), SPI_USR);
+	lcdDataPos=0;
+}
 
 void lcdSpiWrite(int data) {
-	int bit;
-	GPIO_REG_WRITE(GPIO_OUT_W1TC, (1<<SPI_CS));
-	for (bit=0x100; bit!=0; bit>>=1) {
-		if (data&bit) {
-			GPIO_REG_WRITE(GPIO_OUT_W1TS, (1<<SPI_DAT));
-		} else {
-			GPIO_REG_WRITE(GPIO_OUT_W1TC, (1<<SPI_DAT));
-		}
-		GPIO_REG_WRITE(GPIO_OUT_W1TC, (1<<SPI_CLK));
-		GPIO_REG_WRITE(GPIO_OUT_W1TS, (1<<SPI_CLK));
-	}
+	int bytePos=(lcdDataPos/4);
+	if ((lcdDataPos&3)==0) lcdData[bytePos]|=data<<24;
+	if ((lcdDataPos&3)==1) lcdData[bytePos]|=data<<16;
+	if ((lcdDataPos&3)==2) lcdData[bytePos]|=data<<8;
+	if ((lcdDataPos&3)==3) lcdData[bytePos]|=data<<0;
+	lcdDataPos++;
 }
 
-void lcdRaiseCs() {
-	GPIO_REG_WRITE(GPIO_OUT_W1TS, (1<<SPI_CS));
+void SPI_WriteCMD(int cmd) {
+	if (lcdDataPos!=0) lcdSpiSend(0);
+	lcdSpiWrite(cmd);
+	lcdSpiSend(1);
 }
 
-void lcdLowerCs() {
-	GPIO_REG_WRITE(GPIO_OUT_W1TC, (1<<SPI_CS));
+void SPI_WriteDAT(int dat) {
+	lcdSpiWrite(dat&0xff);
 }
 
-#define SPI_WriteCMD(cmd) lcdSpiWrite(cmd)
-#define SPI_WriteDAT(dat) lcdSpiWrite(dat|0x100)
 
 
 void lcdInit() {
+	int x;
 	printf("LCD init\n");
-	GPIO_ConfigTypeDef gpioconf={
-		(1<<SPI_CS)|(1<<SPI_CLK)|(1<<SPI_DAT)|(1<<SPI_RST), 0, GPIO_Mode_Output, GPIO_PullUp_DIS, GPIO_PullDown_DIS, GPIO_PIN_INTR_DISABLE
-	};
+	//Init reset
+	GPIO_ConfigTypeDef gpioconf={(1<<SPI_RST)|(1<<SPI_DC), 0, GPIO_Mode_Output, GPIO_PullUp_DIS, GPIO_PullDown_DIS, GPIO_PIN_INTR_DISABLE };
 	gpio_config(&gpioconf);
-	
-	lcdRaiseCs();
-	vTaskDelay(10);
 
+	//SPI clk = 40MHz
+	WRITE_PERI_REG(SPI_CLOCK(SPIDEV), (0<<SPI_CLKDIV_PRE_S) |
+		(1<<SPI_CLKCNT_N_S)|(1<<SPI_CLKCNT_L_S)|(0<<SPI_CLKCNT_H_S));
+	WRITE_PERI_REG(SPI_CTRL(SPIDEV), 0);//SPI_WR_BIT_ORDER);
+	WRITE_PERI_REG(SPI_USER(SPIDEV), SPI_CS_SETUP|SPI_CS_HOLD|SPI_USR_MOSI|SPI_WR_BYTE_ORDER);
+	WRITE_PERI_REG(SPI_USER1(SPIDEV), (9<<SPI_USR_MOSI_BITLEN_S));
+
+	//Route SPI to pins
+	WRITE_PERI_REG(GPIO_ENABLE,0xfffffff);//ENABLE gpio19 gpio4 oe_enable
+	SET_PERI_REG_BITS(GPIO_FUNC_OUT_SEL4,GPIO_GPIO_FUNC19_OUT_SEL, VSPICS0_OUT_IDX, GPIO_GPIO_FUNC19_OUT_SEL_S);
+	SET_PERI_REG_BITS(PERIPHS_IO_MUX_GPIO19_U, MCU_SEL, 0, MCU_SEL_S);
+	SET_PERI_REG_BITS(GPIO_FUNC_OUT_SEL5,GPIO_GPIO_FUNC20_OUT_SEL, VSPICLK_OUT_MUX_IDX, GPIO_GPIO_FUNC20_OUT_SEL_S);
+	SET_PERI_REG_BITS(PERIPHS_IO_MUX_GPIO20_U, MCU_SEL, 0, MCU_SEL_S);
+	SET_PERI_REG_BITS(GPIO_FUNC_OUT_SEL5,GPIO_GPIO_FUNC21_OUT_SEL, VSPID_OUT_IDX, GPIO_GPIO_FUNC21_OUT_SEL_S);
+	SET_PERI_REG_BITS(PERIPHS_IO_MUX_GPIO21_U, MCU_SEL, 0, MCU_SEL_S);
+
+	lcdSpiWrite(0); //dummy
+	lcdSpiSend(0);
+
+	vTaskDelay(10);
 	GPIO_REG_WRITE(GPIO_OUT_W1TC, (1<<SPI_RST));
 	vTaskDelay(150);
 	GPIO_REG_WRITE(GPIO_OUT_W1TS, (1<<SPI_RST));
 	vTaskDelay(10);
 
-	SPI_WriteCMD(0x11); //Sleep Out
-	vTaskDelay(120);
-	//SPI_WriteCMD(0x36);
-	//SPI_WriteDAT(0x40);
-	SPI_WriteCMD(0xB4);
-	SPI_WriteDAT(0x10);
-	SPI_WriteCMD(0xB3);
-	SPI_WriteDAT(0x00);
-	SPI_WriteDAT(0x00);
-	SPI_WriteDAT(0x00);
-	SPI_WriteDAT(0x20);
-	//SPI_WriteCMD(0xC0);
-	//SPI_WriteDAT(0x04);
-	SPI_WriteCMD(0xC5);
-	SPI_WriteDAT(0x07);
-	SPI_WriteCMD(0xC8); //Set Gamma
-	SPI_WriteDAT(0x01);
-	SPI_WriteDAT(0x36);
-	SPI_WriteDAT(0x00);
-	SPI_WriteDAT(0x02);
-	SPI_WriteDAT(0x00);
-	SPI_WriteDAT(0x1C);
-	SPI_WriteDAT(0x77);
-	SPI_WriteDAT(0x14);
-	SPI_WriteDAT(0x67);
-	SPI_WriteDAT(0x20);
-	SPI_WriteDAT(0x0E);
-	SPI_WriteDAT(0x00);
-	SPI_WriteCMD(0xD0);   //Set Power
-	SPI_WriteDAT(0x44);   //DDVDH
-	SPI_WriteDAT(0x41);
-	SPI_WriteDAT(0x08);   //VREG1
-	SPI_WriteDAT(0xC2);
-	SPI_WriteCMD(0xD1);   //Set VCOM
-	SPI_WriteDAT(0x50);   //VCOMH
-	SPI_WriteDAT(0x11);   //VCOML
-	SPI_WriteCMD(0xD2);   //Set NOROW
-	SPI_WriteDAT(0x05);   //SAP
-	SPI_WriteDAT(0x12);   //DC10
-	SPI_WriteCMD(0xE9); //Set Panel
-	SPI_WriteDAT(0x09);
-	SPI_WriteCMD(0xEA); //Set STBA
-	SPI_WriteDAT(0x03);
-	SPI_WriteDAT(0x00);
-	SPI_WriteDAT(0x00);
-	SPI_WriteCMD(0xEE); //Set EQ
-	SPI_WriteDAT(0x00);
-	SPI_WriteDAT(0x00);
-	SPI_WriteDAT(0x00);
-	SPI_WriteDAT(0x00);
-	SPI_WriteCMD(0xED); //Set DIR TIM
-	SPI_WriteDAT(0x00);
-	SPI_WriteDAT(0x00);
-	SPI_WriteDAT(0x9A);
-	SPI_WriteDAT(0x9A);
-	SPI_WriteDAT(0x9B);
-	SPI_WriteDAT(0x9B);
-	SPI_WriteDAT(0x00);
-	SPI_WriteDAT(0x00);
-	SPI_WriteDAT(0x00);
-	SPI_WriteDAT(0x00);
-	SPI_WriteDAT(0xAE);
-	SPI_WriteDAT(0xAE);
-	SPI_WriteDAT(0x01);
-	SPI_WriteDAT(0x9B);
-	SPI_WriteDAT(0x00);
+	SPI_WriteCMD(0xCB);  
+	SPI_WriteDAT(0x39); 
+	SPI_WriteDAT(0x2C); 
+	SPI_WriteDAT(0x00); 
+	SPI_WriteDAT(0x34); 
+	SPI_WriteDAT(0x02); 
 
-#if 0
-SPI_WriteCMD(0xC6);//set rgb interface
-SPI_WriteDAT(0x83);//
-SPI_WriteCMD(0x29); //Display On
-	vTaskDelay(50);
+	SPI_WriteCMD(0xCF);  
+	SPI_WriteDAT(0x00); 
+	SPI_WriteDAT(0XC1); 
+	SPI_WriteDAT(0X30); 
  
-/////////////////////////////////////////////////////
-SPI_WriteCMD(0x36);
-SPI_WriteDAT(0x48);//
-SPI_WriteCMD(0x3A);//
-SPI_WriteDAT(0x55);//
-#else
-	SPI_WriteCMD(0xC6);//set rgb interface (this one is undocumented?)
-	SPI_WriteDAT(0x83);//
-	SPI_WriteCMD(0x29);//Display On - Do Not Set 
-	vTaskDelay(50);
-	 
-	/////////////////////////////////////////////////////
-	SPI_WriteCMD(0x36);
-	SPI_WriteDAT(0x68);//
-	SPI_WriteCMD(0x3A);//
-	SPI_WriteDAT(0x55);//
-#endif
+	SPI_WriteCMD(0xE8);  
+	SPI_WriteDAT(0x85); 
+	SPI_WriteDAT(0x00); 
+	SPI_WriteDAT(0x78); 
+ 
+	SPI_WriteCMD(0xEA);  
+	SPI_WriteDAT(0x00); 
+	SPI_WriteDAT(0x00); 
+ 
+	SPI_WriteCMD(0xED);  
+	SPI_WriteDAT(0x64); 
+	SPI_WriteDAT(0x03); 
+	SPI_WriteDAT(0X12); 
+	SPI_WriteDAT(0X81); 
 
-	lcdRaiseCs();
+	SPI_WriteCMD(0xF7);  
+	SPI_WriteDAT(0x20); 
+  
+	SPI_WriteCMD(0xC0);    //Power control 
+	SPI_WriteDAT(0x23);   //VRH[5:0] 
+ 
+	SPI_WriteCMD(0xC1);    //Power control 
+	SPI_WriteDAT(0x10);   //SAP[2:0];BT[3:0] 
+ 
+	SPI_WriteCMD(0xC5);    //VCM control 
+	SPI_WriteDAT(0x3e);
+	SPI_WriteDAT(0x28); 
+ 
+	SPI_WriteCMD(0xC7);    //VCM control2 
+	SPI_WriteDAT(0x86);  //--
+ 
+	SPI_WriteCMD(0x36);    // Memory Access Control 
+	SPI_WriteDAT(0x28);
+
+	SPI_WriteCMD(0x3A);    
+	SPI_WriteDAT(0x55); 
+
+	SPI_WriteCMD(0xB1);    
+	SPI_WriteDAT(0x00);  
+	SPI_WriteDAT(0x18); 
+ 
+	SPI_WriteCMD(0xB6);    // Display Function Control 
+	SPI_WriteDAT(0x08); 
+	SPI_WriteDAT(0x82);
+	SPI_WriteDAT(0x27);  
+ 
+	SPI_WriteCMD(0xF2);    // 3Gamma Function Disable 
+	SPI_WriteDAT(0x00); 
+ 
+	SPI_WriteCMD(0x26);    //Gamma curve selected 
+	SPI_WriteDAT(0x01); 
+ 
+	SPI_WriteCMD(0xE0);    //Set Gamma 
+	SPI_WriteDAT(0x0F); 
+	SPI_WriteDAT(0x31); 
+	SPI_WriteDAT(0x2B); 
+	SPI_WriteDAT(0x0C); 
+	SPI_WriteDAT(0x0E); 
+	SPI_WriteDAT(0x08); 
+	SPI_WriteDAT(0x4E); 
+	SPI_WriteDAT(0xF1); 
+	SPI_WriteDAT(0x37); 
+	SPI_WriteDAT(0x07); 
+	SPI_WriteDAT(0x10); 
+	SPI_WriteDAT(0x03); 
+	SPI_WriteDAT(0x0E); 
+	SPI_WriteDAT(0x09); 
+	SPI_WriteDAT(0x00); 
+
+	SPI_WriteCMD(0XE1);    //Set Gamma 
+	SPI_WriteDAT(0x00); 
+	SPI_WriteDAT(0x0E); 
+	SPI_WriteDAT(0x14); 
+	SPI_WriteDAT(0x03); 
+	SPI_WriteDAT(0x11); 
+	SPI_WriteDAT(0x07); 
+	SPI_WriteDAT(0x31); 
+	SPI_WriteDAT(0xC1); 
+	SPI_WriteDAT(0x48); 
+	SPI_WriteDAT(0x08); 
+	SPI_WriteDAT(0x0F); 
+	SPI_WriteDAT(0x0C); 
+	SPI_WriteDAT(0x31); 
+	SPI_WriteDAT(0x36); 
+	SPI_WriteDAT(0x0F); 
+ 
+	SPI_WriteCMD(0x11);    //Exit Sleep 
+	vTaskDelay(10);
+				
+	SPI_WriteCMD(0x29);    //Display on 
+	SPI_WriteCMD(0x2c); 
+	lcdSpiSend(0);
+
 	printf("Init done.\n");
 }
 
@@ -182,28 +238,32 @@ void lcdWriteSMSFrame() {
 
 	//Convert RGB palette to 565 data as required by the LCD beforehand.
 	for (x=0; x<32; x++) {
-		pal565[x]=((bitmap.pal.color[x][2]>>3)<<11)|((bitmap.pal.color[x][1]>>2)<<5)|(bitmap.pal.color[x][0]>>3);
+		pal565[x]=((bitmap.pal.color[x][0]>>3)<<11)|((bitmap.pal.color[x][1]>>2)<<5)|(bitmap.pal.color[x][2]>>3);
 	}
+	///Center image
+	#define XSTART 32
+	#define YSTART 24
 
-	lcdLowerCs();
 	SPI_WriteCMD(0x2A); //Column address set
-	SPI_WriteDAT(0);
-	SPI_WriteDAT(0);
-	SPI_WriteDAT(0);
-	SPI_WriteDAT(255);
+	SPI_WriteDAT((XSTART)>>8);
+	SPI_WriteDAT((XSTART)&0xff);
+	SPI_WriteDAT((XSTART+255)>>8);
+	SPI_WriteDAT((XSTART+255)&0xff);
 	SPI_WriteCMD(0x2B); //Page address set
-	SPI_WriteDAT(0);
-	SPI_WriteDAT(0);
-	SPI_WriteDAT(0);
-	SPI_WriteDAT(192);
+	SPI_WriteDAT((YSTART)>>8);
+	SPI_WriteDAT((YSTART)&0xff);
+	SPI_WriteDAT((YSTART+192)>>8);
+	SPI_WriteDAT((YSTART+192)&0xff);
 	SPI_WriteCMD(0x2C); //Memory write
 	for (y=0; y<192; y++) {
 		for (x=0; x<256; x++) {
 			index=(*p++)&31;
 			col=pal565[index];
-			SPI_WriteDAT((col>>8)&0xff);
-			SPI_WriteDAT(col&0xff);
+			SPI_WriteDAT((col>>8));
+			SPI_WriteDAT(col);
+			if ((x&31)==0) lcdSpiSend(0);
 		}
 	}
-	lcdRaiseCs();
+//	lcdSpiSend(0);
 }
+
