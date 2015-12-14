@@ -80,7 +80,12 @@ static void smsemu(void *arg) {
 	while(1) {
 		frameno++;
 		sms_frame(0);
-		if ((frameno&3)==0) lcdWriteSMSFrame();
+		if ((frameno&1)==0) {
+			sms_frame(0);
+			lcdWriteSMSFrame();
+		} else {
+			sms_frame(1);
+		}
 	}
 }
 

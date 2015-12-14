@@ -1,3 +1,5 @@
+#pragma GCC optimize ("O2")
+
 /*
  * ESPRSSIF MIT License
  *
@@ -87,6 +89,73 @@ void SPI_WriteDAT(int dat) {
 	lcdSpiWrite(dat&0xff);
 }
 
+
+
+
+int lcdXpos=0;
+int lcdYpos=0;
+int pal565[32];
+char *bmData;
+
+//We use a timer to poke us when the SPI transmission is done. This define indicates when that happens.
+#define SENDTICKS 3000
+
+void lcdPumpPixels() {
+	int col;
+	if (lcdYpos==192) {
+		//ack int
+		xthal_set_ccompare(1, xthal_get_ccount()-1);
+		//disable int
+		xt_ints_off(1<<XCHAL_TIMER_INTERRUPT(1));
+		return;
+	}
+
+	do {
+		col=pal565[(*bmData++)&31];
+		SPI_WriteDAT((col>>8));
+		SPI_WriteDAT(col);
+		lcdXpos++;
+	} while (lcdXpos&31);
+	lcdSpiSend(0);
+	if (lcdXpos==256) {
+		lcdXpos=0;
+		lcdYpos++;
+	}
+	xthal_set_ccompare(1, xthal_get_ccount()+SENDTICKS);
+}
+
+
+void lcdWriteSMSFrame() {
+	int index;
+	int col;
+	int x, y;
+
+	//Convert RGB palette to 565 data as required by the LCD beforehand.
+	for (x=0; x<32; x++) {
+		pal565[x]=((bitmap.pal.color[x][0]>>3)<<11)|((bitmap.pal.color[x][1]>>2)<<5)|(bitmap.pal.color[x][2]>>3);
+	}
+	///Center image
+	#define XSTART 32
+	#define YSTART 24
+
+	SPI_WriteCMD(0x2A); //Column address set
+	SPI_WriteDAT((XSTART)>>8);
+	SPI_WriteDAT((XSTART)&0xff);
+	SPI_WriteDAT((XSTART+255)>>8);
+	SPI_WriteDAT((XSTART+255)&0xff);
+	SPI_WriteCMD(0x2B); //Page address set
+	SPI_WriteDAT((YSTART)>>8);
+	SPI_WriteDAT((YSTART)&0xff);
+	SPI_WriteDAT((YSTART+192)>>8);
+	SPI_WriteDAT((YSTART+192)&0xff);
+	SPI_WriteCMD(0x2C); //Memory write
+	bmData=bitmap.data;
+	lcdXpos=0;
+	lcdYpos=0;
+
+	xt_ints_on(1<<XCHAL_TIMER_INTERRUPT(1));
+	lcdPumpPixels();
+}
 
 
 void lcdInit() {
@@ -226,61 +295,9 @@ void lcdInit() {
 	SPI_WriteCMD(0x2c); 
 	lcdSpiSend(0);
 
+	xt_set_interrupt_handler(XCHAL_TIMER_INTERRUPT(1), lcdPumpPixels, NULL);
+//	xt_ints_on(1<<XCHAL_TIMER_INTERRUPT(1));
+
 	printf("Init done.\n");
-}
-
-
-int lcdXpos=0;
-int lcdYpos=0;
-int pal565[32];
-char *bmData;
-
-void lcdPumpPixels() {
-	int col;
-	if (lcdYpos==192) return;
-
-	do {
-		col=pal565[(*bmData++)&31];
-		SPI_WriteDAT((col>>8));
-		SPI_WriteDAT(col);
-		lcdXpos++;
-	} while (lcdXpos&31);
-	lcdSpiSend(0);
-	if (lcdXpos==256) {
-		lcdXpos=0;
-		lcdYpos++;
-	}
-}
-
-
-void lcdWriteSMSFrame() {
-	int index;
-	int col;
-	int x, y;
-
-	//Convert RGB palette to 565 data as required by the LCD beforehand.
-	for (x=0; x<32; x++) {
-		pal565[x]=((bitmap.pal.color[x][0]>>3)<<11)|((bitmap.pal.color[x][1]>>2)<<5)|(bitmap.pal.color[x][2]>>3);
-	}
-	///Center image
-	#define XSTART 32
-	#define YSTART 24
-
-	SPI_WriteCMD(0x2A); //Column address set
-	SPI_WriteDAT((XSTART)>>8);
-	SPI_WriteDAT((XSTART)&0xff);
-	SPI_WriteDAT((XSTART+255)>>8);
-	SPI_WriteDAT((XSTART+255)&0xff);
-	SPI_WriteCMD(0x2B); //Page address set
-	SPI_WriteDAT((YSTART)>>8);
-	SPI_WriteDAT((YSTART)&0xff);
-	SPI_WriteDAT((YSTART+192)>>8);
-	SPI_WriteDAT((YSTART+192)&0xff);
-	SPI_WriteCMD(0x2C); //Memory write
-
-	bmData=bitmap.data;
-	lcdXpos=0;
-	lcdYpos=0;
-	while (lcdYpos!=192) lcdPumpPixels();
 }
 

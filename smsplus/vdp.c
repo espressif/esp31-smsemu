@@ -1,3 +1,4 @@
+#pragma GCC optimize ("O2")
 
 #include "shared.h"
 
