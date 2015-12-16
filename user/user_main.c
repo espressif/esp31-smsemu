@@ -32,6 +32,7 @@
 #include "esp_common.h"
 #include "esp32/esp32.h"
 
+#include "psxcontroller.h"
 
 char unalChar(const char *adr) {
 	int *p=(int *)((int)adr&0xfffffffc);
@@ -71,7 +72,7 @@ static void smsemu(void *arg) {
 	cart.pages=((256*1024)/0x4000);
 	cart.rom=(char*)0x40180000;
 	cart.type=TYPE_SMS;
-	snd.bufsize=16;
+//	snd.bufsize=16;
 	
 	lcdInit();
 
@@ -80,7 +81,8 @@ static void smsemu(void *arg) {
 	while(1) {
 		frameno++;
 		sms_frame(0);
-		if ((frameno&1)==0) {
+		if ((frameno&1)) {
+			psxReadInput();
 			sms_frame(0);
 			lcdWriteSMSFrame();
 		} else {
@@ -102,5 +104,6 @@ void user_init(void)
 
 	printf("SDK version:%s\n", system_get_sdk_version());
 	xTaskCreate(smsemu, "smsemu"  , 2048, NULL, 3, NULL);
+	psxcontrollerInit();
 }
 

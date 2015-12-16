@@ -98,7 +98,7 @@ int pal565[32];
 char *bmData;
 
 //We use a timer to poke us when the SPI transmission is done. This define indicates when that happens.
-#define SENDTICKS 3000
+#define SENDTICKS 3200
 
 void lcdPumpPixels() {
 	int col;
