@@ -93,12 +93,13 @@ void SPI_WriteDAT(int dat) {
 
 
 int lcdXpos=0;
-int lcdYpos=0;
+int lcdYpos=192;
+int lcdDone=1;
 int pal565[32];
 char *bmData;
 
 //We use a timer to poke us when the SPI transmission is done. This define indicates when that happens.
-#define SENDTICKS 3200
+#define SENDTICKS 1600 //1500
 
 void lcdPumpPixels() {
 	int col;
@@ -107,6 +108,7 @@ void lcdPumpPixels() {
 		xthal_set_ccompare(1, xthal_get_ccount()-1);
 		//disable int
 		xt_ints_off(1<<XCHAL_TIMER_INTERRUPT(1));
+		lcdDone=1;
 		return;
 	}
 
@@ -116,6 +118,11 @@ void lcdPumpPixels() {
 		SPI_WriteDAT(col);
 		lcdXpos++;
 	} while (lcdXpos&31);
+	if (READ_PERI_REG(SPI_CMD(SPIDEV)) & SPI_USR) {
+		printf("SPI not done!\n");
+		lcdXpos=0;
+		lcdYpos=192; //End frame, this one is probably borked anyway.
+	}
 	lcdSpiSend(0);
 	if (lcdXpos==256) {
 		lcdXpos=0;
@@ -130,6 +137,10 @@ void lcdWriteSMSFrame() {
 	int col;
 	int x, y;
 
+	if (!lcdDone) {
+		printf("LCD not done yet. Skipping frame.\n");
+		return;
+	}
 	//Convert RGB palette to 565 data as required by the LCD beforehand.
 	for (x=0; x<32; x++) {
 		pal565[x]=((bitmap.pal.color[x][0]>>3)<<11)|((bitmap.pal.color[x][1]>>2)<<5)|(bitmap.pal.color[x][2]>>3);
@@ -152,6 +163,7 @@ void lcdWriteSMSFrame() {
 	bmData=bitmap.data;
 	lcdXpos=0;
 	lcdYpos=0;
+	lcdDone=0;
 
 	xt_ints_on(1<<XCHAL_TIMER_INTERRUPT(1));
 	lcdPumpPixels();
@@ -297,6 +309,7 @@ void lcdInit() {
 
 	xt_set_interrupt_handler(XCHAL_TIMER_INTERRUPT(1), lcdPumpPixels, NULL);
 //	xt_ints_on(1<<XCHAL_TIMER_INTERRUPT(1));
+	lcdDone=1;
 
 	printf("Init done.\n");
 }

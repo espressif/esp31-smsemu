@@ -7,9 +7,6 @@ void (*render_bg)(int line);
 /* Pointer to output buffer */
 uint8 *linebuf;
 
-/* Internal buffer for drawing non 8-bit displays */
-uint8 internal_buffer[0x100];
-
 /* Precalculated pixel table */
 uint16 pixel[PALETTE_SIZE];
 
@@ -31,7 +28,7 @@ int freePtr=0;
 #include "lut.h"
 
 /* Attribute expansion table */
-const uint32 atex[4] =
+uint32 atex[4] =
 {
     0x00000000,
     0x10101010,
@@ -268,7 +265,7 @@ void render_line(int line)
     if((line < vp_vstart) || (line >= vp_vend)) return;
 
     /* Point to current line in output buffer */
-    linebuf = (bitmap.depth == 8) ? &bitmap.data[(line * bitmap.pitch)] : &internal_buffer[0];
+    linebuf = &bitmap.data[(line * bitmap.pitch)];
 
 
     /* Blank line */

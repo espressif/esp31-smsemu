@@ -35,6 +35,7 @@
 #include "psxcontroller.h"
 
 char unalChar(const char *adr) {
+	if (!(((int)adr)&0x40000000)) return *adr;
 	int *p=(int *)((int)adr&0xfffffffc);
 	int v=*p;
 	int w=((int)adr&3);
@@ -54,22 +55,23 @@ void system_load_sram(void) {
 }
 
 
+#define SMS_FPS 60
+
 static void smsemu(void *arg) {
-	int x;
-	int y;
-	int frameno;
+	int frameno, frameTgt;
+	int lastTickCnt, tickCnt;
+	int didFrame;
 	sms.use_fm=0;
 	sms.country=TYPE_OVERSEAS;
 	sms.dummy=(uint8*)0x3ffa8000; //Redirect dummy accesses to ROM. Write is a no-op and reads don't matter.
-//	sms.sram=(uint8*)0x3ffa8000; //Redirect dummy accesses to ROM. Write is a no-op and reads don't matter.
-	sms.sram=&videodata[256*192];
+	sms.sram=&videodata[256*192]; //We put the SRAM in the app cpu icache, after the videodata.
 	bitmap.data=videodata;
 	bitmap.width=256;
 	bitmap.height=192;
 	bitmap.pitch=256;
 	bitmap.depth=8;
 	
-	cart.pages=((256*1024)/0x4000);
+	cart.pages=((512*1024)/0x4000);
 	cart.rom=(char*)0x40180000;
 	cart.type=TYPE_SMS;
 //	snd.bufsize=16;
@@ -78,16 +80,32 @@ static void smsemu(void *arg) {
 
 	system_init(0);
 	sms_init();
+	lastTickCnt=0;
 	while(1) {
-		frameno++;
-		sms_frame(0);
-		if ((frameno&1)) {
-			psxReadInput();
-			sms_frame(0);
-			lcdWriteSMSFrame();
-		} else {
-			sms_frame(1);
+		//tickCnt would be 100tick/sec, but because we're running at double the clock speed without informing
+		//the RTOS, it's 200tick/sec
+		for (frameno=0; frameno<SMS_FPS; frameno++) {
+			tickCnt=xTaskGetTickCount();
+			if (tickCnt==lastTickCnt) tickCnt++;
+			frameTgt=((tickCnt-lastTickCnt)*SMS_FPS)/200;
+			frameTgt+=didFrame; //Try do diffuse frames a bit...
+			if (frameTgt<=frameno) {
+				psxReadInput();
+				sms_frame(0);
+				lcdWriteSMSFrame();
+				didFrame=3;
+				printf("1");
+			} else {
+				sms_frame(1);
+				if (didFrame!=0) didFrame--;
+				printf("0");
+			}
 		}
+		printf("\n");
+		tickCnt=xTaskGetTickCount();
+		if (tickCnt==lastTickCnt) tickCnt++;
+		printf("fps=%d\n", (SMS_FPS*200)/(tickCnt-lastTickCnt));
+		lastTickCnt=tickCnt;
 	}
 }
 
