@@ -38,8 +38,11 @@
 #include "i2s_freertos.h"
 
 
+//Read an unaligned byte.
 char unalChar(const char *adr) {
+	//See if the byte is in memory that can be read unaligned anyway.
 	if (!(((int)adr)&0x40000000)) return *adr;
+	//Nope: grab a word and distill the byte.
 	int *p=(int *)((int)adr&0xfffffffc);
 	int v=*p;
 	int w=((int)adr&3);
@@ -50,10 +53,14 @@ char unalChar(const char *adr) {
 }
 
 
+//These are the arrays we store in the app cpu IRAM. We don't use the app
+//processor, so we can freely use its IRAM for other purposes.
+typedef struct {
+	unsigned char videodata[256*192];
+	unsigned char sram[0x8000];
+} AppIramData;
 
-//Abuse app iram as mem buffer
-char *videodata=(char*)0x3ffa8000;
-
+AppIramData *appIramData=(AppIramData*)0x3ffa8000;
 
 void system_load_sram(void) {
 }
@@ -70,9 +77,9 @@ static void smsemu(void *arg) {
 	short sndleft[(SNDRATE/SMS_FPS)], sndright[(SNDRATE/SMS_FPS)];
 	sms.use_fm=0;
 	sms.country=TYPE_OVERSEAS;
-	sms.dummy=(uint8*)0x3ffa8000; //Redirect dummy accesses to ROM. Write is a no-op and reads don't matter.
-	sms.sram=&videodata[256*192]; //We put the SRAM in the app cpu icache, after the videodata.
-	bitmap.data=videodata;
+	sms.dummy=appIramData->videodata; //A normal cart shouldn't access this memory ever. Point it to vram just in case.
+	sms.sram=appIramData->sram;
+	bitmap.data=appIramData->videodata;
 	bitmap.width=256;
 	bitmap.height=192;
 	bitmap.pitch=256;
@@ -94,7 +101,8 @@ static void smsemu(void *arg) {
 			tickCnt=xTaskGetTickCount();
 			if (tickCnt==lastTickCnt) tickCnt++;
 			frameTgt=((tickCnt-lastTickCnt)*SMS_FPS)/200;
-			frameTgt+=didFrame; //Try do diffuse frames a bit...
+			frameTgt+=didFrame; //Try do diffuse frames a bit... otherwise, because of the low
+				//granularity of the FreeRTOS tick variable, the drawn frames will be 'clumped together'.
 			if (frameTgt<=frameno) {
 				psxReadInput();
 				sms_frame(0);

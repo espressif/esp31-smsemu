@@ -40,6 +40,7 @@
 #define PSX_ATT 16
 #define PSX_CMD 17
 
+/* Sends and receives a byte from/to the PSX controller using SPI */
 int psxSendRecv(int send) {
 	int x;
 	int ret=0;
@@ -76,10 +77,11 @@ void psxReadInput() {
 	psxSendRecv(0x01); //wake up
 	psxSendRecv(0x42); //get data
 	psxSendRecv(0xff); //should return 0x5a
-	b1=psxSendRecv(0xff);
-	b2=psxSendRecv(0xff);
+	b1=psxSendRecv(0xff); //buttons byte 1
+	b2=psxSendRecv(0xff); //buttons byte 2
 	psxDone();
 
+	//Convert PSX buttons to SMS buttons
 	smsButtons=0; smsSystem=0;
 	if (!(b1&(1<<4))) smsButtons|=INPUT_UP;
 	if (!(b1&(1<<6))) smsButtons|=INPUT_DOWN;
@@ -106,12 +108,14 @@ void psxcontrollerInit() {
 	gpio_config(&gpioconf[0]);
 	gpio_config(&gpioconf[1]);
 	
+	//Send a few dummy bytes to clean the pipes.
 	psxSendRecv(0);
 	psxDone();
 	for (delay=0; delay<500; delay++);
 	psxSendRecv(0);
 	psxDone();
 	for (delay=0; delay<500; delay++);
+	//Try and detect the type of controller, so we can give the user some diagnostics.
 	psxSendRecv(0x01);
 	t=psxSendRecv(0x00);
 	psxDone();
