@@ -74,16 +74,16 @@ void audio_init(int rate)
     memset(snd.buffer[1], 0, snd.bufsize * 2);
 
     /* YM2413 sound stream */
-    snd.fm_buffer = (signed short int *)malloc(snd.bufsize * 2);
-    if(!snd.fm_buffer) return;
-    memset(snd.fm_buffer, 0, snd.bufsize * 2);
+//    snd.fm_buffer = (signed short int *)malloc(snd.bufsize * 2);
+//    if(!snd.fm_buffer) return;
+//    memset(snd.fm_buffer, 0, snd.bufsize * 2);
 
     /* SN76489 sound stream */
-    snd.psg_buffer[0] = (signed short int *)malloc(snd.bufsize * 2);
-    snd.psg_buffer[1] = (signed short int *)malloc(snd.bufsize * 2);
-    if(!snd.psg_buffer[0] || !snd.psg_buffer[1]) return;
-    memset(snd.psg_buffer[0], 0, snd.bufsize * 2);
-    memset(snd.psg_buffer[1], 0, snd.bufsize * 2);
+//    snd.psg_buffer[0] = (signed short int *)malloc(snd.bufsize * 2);
+//    snd.psg_buffer[1] = (signed short int *)malloc(snd.bufsize * 2);
+//    if(!snd.psg_buffer[0] || !snd.psg_buffer[1]) return;
+//    memset(snd.psg_buffer[0], 0, snd.bufsize * 2);
+//    memset(snd.psg_buffer[1], 0, snd.bufsize * 2);
 
     /* Set up SN76489 emulation */
     SN76496_init(0, MASTER_CLOCK, 255, rate);

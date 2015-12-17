@@ -46,6 +46,7 @@ void sms_frame(int skip_render)
     /* Update the emulated sound stream */
     if(snd.enabled) 
     {
+/*
         int count;
 
         SN76496Update(0, snd.psg_buffer, snd.bufsize, sms.psg_mask);
@@ -63,12 +64,15 @@ void sms_frame(int skip_render)
         {
             signed short left   = 0;
             signed short right  = 0;
-            left = right = snd.fm_buffer[count];
+//            left = right = snd.fm_buffer[count];
+			left=0;
             left  += snd.psg_buffer[0][count];
             right += snd.psg_buffer[1][count];
             snd.buffer[0][count] = left;
             snd.buffer[1][count] = right;
         }
+*/
+        SN76496Update(0, snd.buffer, snd.bufsize, sms.psg_mask);
     }
 }
 

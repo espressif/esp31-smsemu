@@ -32,7 +32,11 @@
 #include "esp_common.h"
 #include "esp32/esp32.h"
 
+#include "i2s_freertos.h"
+
 #include "psxcontroller.h"
+#include "i2s_freertos.h"
+
 
 char unalChar(const char *adr) {
 	if (!(((int)adr)&0x40000000)) return *adr;
@@ -56,11 +60,14 @@ void system_load_sram(void) {
 
 
 #define SMS_FPS 60
+#define SNDRATE 22050
 
 static void smsemu(void *arg) {
 	int frameno, frameTgt;
 	int lastTickCnt, tickCnt;
 	int didFrame;
+	int x;
+	short sndleft[(SNDRATE/SMS_FPS)], sndright[(SNDRATE/SMS_FPS)];
 	sms.use_fm=0;
 	sms.country=TYPE_OVERSEAS;
 	sms.dummy=(uint8*)0x3ffa8000; //Redirect dummy accesses to ROM. Write is a no-op and reads don't matter.
@@ -74,12 +81,11 @@ static void smsemu(void *arg) {
 	cart.pages=((512*1024)/0x4000);
 	cart.rom=(char*)0x40180000;
 	cart.type=TYPE_SMS;
-//	snd.bufsize=16;
-	
+
 	lcdInit();
 
-	system_init(0);
-	sms_init();
+	system_init(SNDRATE);
+	printf("Sound buffer: %d samples, enabled=%d.\n", snd.bufsize, snd.enabled);
 	lastTickCnt=0;
 	while(1) {
 		//tickCnt would be 100tick/sec, but because we're running at double the clock speed without informing
@@ -99,6 +105,9 @@ static void smsemu(void *arg) {
 				sms_frame(1);
 				if (didFrame!=0) didFrame--;
 				printf("0");
+			}
+			for (x=0; x<snd.bufsize; x++) {
+				i2sPushSample((snd.buffer[0][x]<<16)+snd.buffer[1][x]);
 			}
 		}
 		printf("\n");
@@ -123,5 +132,7 @@ void user_init(void)
 	printf("SDK version:%s\n", system_get_sdk_version());
 	xTaskCreate(smsemu, "smsemu"  , 2048, NULL, 3, NULL);
 	psxcontrollerInit();
+	i2sInit();
+	i2sSetRate(SNDRATE, 0);
 }
 
