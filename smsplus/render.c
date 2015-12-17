@@ -108,9 +108,10 @@ uint8 *getCache(int tile, int attr) {
 
 			c = (i3 << 3 | i2 << 2 | i1 << 1 | i0);
 			if (attr==0) cacheStore[(i<<6)|(y<<3)|(x)]=c;
-			if (attr==1) cacheStore[(i<<6)|((y^7)<<3)|(x^7)]=c;
-			if (attr==2) cacheStore[(i<<6)|(y<<3)|(x)]=c;
+			if (attr==1) cacheStore[(i<<6)|(y<<3)|(x^7)]=c;
+			if (attr==2) cacheStore[(i<<6)|((y^7)<<3)|(x)]=c;
 			if (attr==3) cacheStore[(i<<6)|((y^7)<<3)|(x^7)]=c;
+
 		}
 	}
 	return &cacheStore[i<<6];
