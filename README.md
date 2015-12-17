@@ -20,24 +20,30 @@ to work.
 # How do I hoop up my board?
 
 **LCD:**
+
     Reset - GPIO18
     /CS   - GPIO19
     CLK   - GPIO20
     MOSI  - GPIO21
     D/C   - GPIO22
+
 (Make sure to also wire up the backlight and power pins.)
 
 **I2S codec**
+
     LRCLK - GPIO32 (also called 'WS')
     DATA  - GPIO33
     BCK   - GPIO27
+
 (Obviously, also hook up the power pins and connect the sound output to an amp or headphones or so.)
 
 **PSX/PS2 controller**
+
     DATA  - GPIO25
     CLOCK - GPIO14
     ATT   - GPIO16
     CMD   - GPIO17
+
 (Pinouts can be found [here](http://www.gamesx.com/controldata/psxcont/psxcont.htm). Hook VCC up to 3.3V.
 The 9 volt line (pin 3) and the ACK pin can be left unconnected.)
 
@@ -45,10 +51,12 @@ The 9 volt line (pin 3) and the ACK pin can be left unconnected.)
 
 Using a tool capable of flashing the SPI flash connected to the ESP31, program the following files to the following
 addresses:
+
     bin/boot.bin        -> 0x000000
     bin/irom1.bin       -> 0x004000
     bin/irom0_flash.bin -> 0x040000
     (SMS game ROM image)-> 0x140000
+
 Because of copyright reasons, you will have to supply the game rom image yourself.
 
 
